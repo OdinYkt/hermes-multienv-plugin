@@ -1,15 +1,7 @@
-"""Multitool plugin — multi-environment tool access for Hermes Agent.
+"""Multi-environment tool plugin for Hermes Agent.
 
-Registers 4 tools that let the agent work with multiple SSH and Docker
-environments simultaneously:
-
-  env_connect     — create a named connection
-  env_list        — list active connections
-  env_tool        — execute a tool operation on a named environment
-  env_disconnect  — close a connection and release resources
+Registers 4 tools: env_connect, env_list, env_tool, env_disconnect.
 """
-
-import logging
 
 from multienv.schemas import (
     ENV_CONNECT_SCHEMA,
@@ -24,6 +16,8 @@ from multienv.handlers import (
     handle_env_list,
     handle_env_tool,
 )
+
+import logging
 
 logger = logging.getLogger(__name__)
 
