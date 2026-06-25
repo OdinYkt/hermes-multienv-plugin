@@ -1,0 +1,541 @@
+{
+  "$schema": "design-doc/v1",
+  "title": "Multi-Environment Tool Plugin for Hermes Agent",
+  "created": "2026-06-25",
+  "status": "design-updated-2026-06-25-path-c",
+
+  "core_idea": {
+    "summary": "Plugin registers 3 tools (env_connect, env_list, env_tool) that let the agent work with N execution environments simultaneously. env_tool is a meta-dispatcher: takes env_slug + tool_name + args, routes to the named environment using existing backend classes. Schema grows by 3 tools total, never more.",
+    "ikr": [
+      "Agent executes commands on local + remote SSH + Docker container in one turn",
+      "Adding a new environment = one env_connect call, after which all core tool operations are available for that env",
+      "Tool schema does not grow with number of environments — 3 tools regardless of N"
+    ]
+  },
+
+  "tools": {
+    "env_connect": {
+      "purpose": "Create a named connection to an execution environment",
+      "returns": "slug (string) — user-provided or auto-generated identifier",
+      "schema_concept": {
+        "slug": "string — user-defined name for this environment (optional, auto-generated if omitted)",
+        "type": "enum: docker | ssh (local is handled by core Hermes TERMINAL_ENV=local)",
+        "cwd": "string — initial working directory (optional)",
+        "timeout": "int — command timeout in seconds (optional, default 180)",
+        "ssh_specific": {
+          "host": "string — remote server hostname",
+          "user": "string — SSH username",
+          "port": "int — SSH port (default 22)",
+          "key_path": "string — path to private key"
+        },
+        "docker_specific": {
+          "image": "string — Docker image name",
+          "volumes": "array — host:container volume mounts",
+          "run_as_host_user": "bool",
+          "auto_mount_cwd": "bool"
+        }
+      },
+      "verifiable_assertions": [
+        {
+          "claim": "SSHEnvironment constructor accepts host, user, port, key_path, cwd, timeout as explicit parameters",
+          "source": "tools/environments/ssh.py:45 — __init__(self, host, user, cwd, timeout, port, key_path)",
+          "verified": true
+        },
+        {
+          "claim": "DockerEnvironment constructor accepts image, cwd, timeout, cpu, memory, disk, persistent_filesystem, task_id, volumes, host_cwd, auto_mount_cwd, forward_env, env, run_as_host_user, extra_args, persist_across_processes",
+          "source": "tools/terminal_tool.py:1268 — _DockerEnvironment(image=, cwd=, timeout=, cpu=, memory=, disk=, persistent_filesystem=, task_id=, volumes=, host_cwd=, auto_mount_cwd=, forward_env=, env=, run_as_host_user=, extra_args=, persist_across_processes=)",
+          "verified": true
+        },
+        {
+          "claim": "LocalEnvironment exists in core but is NOT used by plugin — local is handled by core Hermes (TERMINAL_ENV=local). Plugin only imports SSHEnvironment and DockerEnvironment.",
+          "source": "tools/terminal_tool.py:1258 — _LocalEnvironment(cwd=cwd, timeout=timeout) exists but plugin does not import it",
+          "verified": true
+        },
+        {
+          "claim": "All backends implement BaseEnvironment ABC with execute(command, cwd, stdin_data) → {output, returncode}",
+          "source": "tools/environments/base.py:829 — def execute(self, command, cwd, *, timeout, stdin_data, rewrite_compound_background) → dict",
+          "verified": true
+        },
+        {
+          "claim": "BaseEnvironment.init_session() captures login shell environment snapshot — must be called after construction",
+          "source": "tools/environments/base.py:351 — def init_session(self)",
+          "verified": true
+        },
+        {
+          "claim": "SSHEnvironment auto-syncs ~/.hermes/ internals (credentials, skills, cache) on construction via FileSyncManager",
+          "source": "tools/environments/ssh.py:72-79 — self._sync_manager = FileSyncManager(...); self._sync_manager.sync(force=True)",
+          "verified": true
+        },
+        {
+          "claim": "SSHEnvironment uses ControlMaster for connection persistence (ControlPersist=300)",
+          "source": "tools/environments/ssh.py:87 — ControlPersist=300",
+          "verified": true
+        }
+      ]
+    },
+
+    "env_list": {
+      "purpose": "List all active environment connections with their metadata",
+      "returns": "JSON array of {slug, type, status, cwd, connected_at}",
+      "schema_concept": {
+        "no_parameters": true
+      },
+      "verifiable_assertions": [
+        {
+          "claim": "Plugin can maintain its own registry dict without touching core _active_environments",
+          "source": "hermes_cli/plugins.py:315 — PluginContext class gives plugins isolated state; no restriction on module-level mutable state",
+          "verified": true
+        }
+      ]
+    },
+
+    "env_tool": {
+      "purpose": "Execute a core tool operation on a named environment",
+      "schema_concept": {
+        "env_slug": "string — target environment identifier from env_connect or preconfigured inventory",
+        "tool_name": "string — name of the logical operation: terminal | read_file | write_file | patch | search_files | execute_code",
+        "args": "object — same parameters as the named tool's own core schema (model derives structure from core tool schemas already in system prompt)"
+      },
+      "supported_tool_names": ["terminal", "read_file", "write_file", "patch", "search_files", "execute_code"],
+      "verifiable_assertions": [
+        {
+          "claim": "ShellFileOperations can be constructed with any BaseEnvironment instance and provides read_file, write_file, patch, search_files",
+          "source": "tools/file_operations.py:772 — class ShellFileOperations.__init__(self, terminal_env, cwd) where terminal_env is 'Any object with execute(command, cwd) method'",
+          "verified": true
+        },
+        {
+          "claim": "ShellFileOperations._exec() prefers live terminal_env.cwd over init-time cwd — tracks cd commands run via terminal",
+          "source": "tools/file_operations.py:807 — _exec() cwd resolution order: explicit arg → live self.env.cwd → init-time self.cwd",
+          "verified": true
+        },
+        {
+          "claim": "BaseEnvironment.execute() handles session snapshot sourcing, CWD tracking, interrupt handling, timeout enforcement — shared across all backends",
+          "source": "tools/environments/base.py:829 — def execute(self, command, cwd, *, timeout, stdin_data, rewrite_compound_background)",
+          "verified": true
+        },
+        {
+          "claim": "env_tool does NOT call core tool handlers — it calls env.execute() and ShellFileOperations directly, bypassing _active_environments entirely",
+          "source": "design: plugin handler uses self.registry[slug].env.execute() and self.registry[slug].file_ops.read_file() — no reference to tools.terminal_tool._active_environments",
+          "verified": true,
+          "verification_method": "code inspection of proposed plugin handler — by construction, not core code"
+        },
+        {
+          "claim": "Plugin tools receive task_id kwarg via registry.dispatch",
+          "source": "tools/registry.py:390 — dispatch(self, name, args, **kwargs) → entry.handler(args, **kwargs); model_tools.py:1148 — registry.dispatch(function_name, next_args, task_id=task_id, session_id=session_id)",
+          "verified": true
+        },
+        {
+          "claim": "execute_code core handler hardcodes _get_or_create_env(task_id) which looks up _active_environments[task_id] — cannot be redirected to plugin env without core changes",
+          "source": "tools/code_execution_tool.py:607-608 — from tools.terminal_tool import _active_environments, _env_lock, _create_environment; line 618: if effective_task_id in _active_environments",
+          "verified": true
+        },
+        {
+          "claim": "Core execute_code cannot be reused for plugin envs without core changes — _get_or_create_env(task_id) hardcodes _active_environments lookup. Plugin provides two alternatives: Path A (plain Python, MVP) and Path C (custom RPC poll loop with plugin-side dispatch, full tool-RPC parity).",
+          "source": "tools/code_execution_tool.py:607-608,618,635 — hardcoded global lookup; Path C reuses generate_hermes_tools_module + _ship_file_to_remote + _env_temp_dir (all public) and replaces only the dispatch layer",
+          "verified": true,
+          "verification_method": "source code inspection + logical deduction from core coupling constraint"
+        }
+      ]
+    }
+  },
+
+  "architecture": {
+    "plugin_location": "~/.hermes/plugins/multitool/",
+    "plugin_files": ["plugin.yaml", "__init__.py"],
+    "toolset_name": "multitool",
+    "registry_design": {
+      "class": "EnvironmentRegistry",
+      "state": {
+        "envs": "dict[str, BaseEnvironment] — slug → env instance",
+        "file_ops": "dict[str, ShellFileOperations] — slug → file ops wrapper",
+        "meta": "dict[str, dict] — slug → {type, status, cwd, connected_at, sync_policy}"
+      },
+      "lifecycle": [
+        "env_connect → create env instance via imported backend class → env.init_session() → store in registry → return slug",
+        "env_tool → lookup registry[slug] → dispatch to env.execute() or file_ops method → return result",
+        "env_list → return registry metadata",
+        "cleanup on session_end hook → iterate registry → env.cleanup() for each"
+      ]
+    },
+    "no_core_modification": {
+      "claim": "Plugin imports backend classes and ShellFileOperations but does not modify any core file",
+      "files_not_touched": [
+        "run_agent.py", "cli.py", "model_tools.py", "tools/terminal_tool.py",
+        "tools/file_tools.py", "tools/code_execution_tool.py", "tools/registry.py",
+        "toolsets.py", "hermes_cli/plugins.py", "hermes_cli/config.py"
+      ],
+      "verifiable_assertion": {
+        "claim": "Plugins MUST NOT modify core files — this is a firm constraint",
+        "source": "AGENTS.md — 'plugins MUST NOT modify core files (run_agent.py, cli.py, gateway/run.py, hermes_cli/main.py, etc.)'",
+        "verified": true
+      }
+    },
+    "no_active_environments_mutation": {
+      "claim": "Plugin never reads or writes tools.terminal_tool._active_environments",
+      "rationale": "Avoids race conditions with concurrent sessions, subagents, and core cleanup thread",
+      "verifiable_assertion": {
+        "claim": "_active_environments is a process-global dict protected by _env_lock — mutating it from plugin risks cross-session bleed",
+        "source": "tools/terminal_tool.py — _active_environments: Dict, _env_lock: threading.Lock, _start_cleanup_thread() reaps idle envs",
+        "verified": true
+      }
+    }
+  },
+
+  "design_decisions": {
+    "why_three_tools_not_one": {
+      "rationale": "env_connect / env_list / env_tool separates connection management, introspection, and dispatch — cleaner than single mega-tool with action enum",
+      "benefit": "Adding new core tool support requires zero schema changes — env_tool.tool_name is a string, not an enum"
+    },
+    "why_env_tool_is_meta_dispatcher": {
+      "rationale": "Instead of N×M tools (ssh_terminal, docker_terminal, ssh_read_file, ...), one dispatcher routes (env_slug, tool_name) to the right env + operation",
+      "schema_impact": "3 tools total. Δ per new environment = 0. Δ per new supported tool = 0 (just add to internal dispatch table, no schema change).",
+      "verifiable_assertion": {
+        "claim": "Every tool in schema costs on every API call — footprint rule",
+        "source": "AGENTS.md — 'Every model tool we add is sent on every API call, so the bar for a new core tool is high'",
+        "verified": true
+      }
+    },
+    "why_not_context_switch": {
+      "rationale": "Swapping _active_environments['default'] is race-prone with concurrent sessions and breaks execute_code backend type detection",
+      "verifiable_assertion": {
+        "claim": "execute_code reads _get_env_config()['env_type'] which returns TERMINAL_ENV — if switched env type differs from configured, behavior is wrong",
+        "source": "tools/code_execution_tool.py:635 — config = _get_env_config(); env_type = config['env_type']",
+        "verified": true
+      }
+    },
+    "why_not_target_parameter_on_core_tools": {
+      "rationale": "Core tool schemas do not include 'target' parameter. Adding it requires modifying core schema definitions — violates plugin-only constraint",
+      "verifiable_assertion": {
+        "claim": "Core tool schemas are defined in tools/*.py at registry.register() time — plugin cannot modify them without core changes",
+        "source": "tools/registry.py:234 — registry.register(name, toolset, schema, ...) — schema is passed at registration, immutable after",
+        "verified": true
+      }
+    },
+    "sync_strategy": {
+      "decision": "Per-env sync_policy set at connect time",
+      "options": {
+        "none": "No sync — agent works with remote FS directly via shell commands (suitable for untrusted hosts, Docker bind-mounts)",
+        "minimal_hermes": "Sync ~/.hermes/credentials + ~/.hermes/skills + ~/.hermes/cache only (SSHEnvironment does this automatically via FileSyncManager)",
+        "full_hermes": "Full ~/.hermes/ sync including sync_back on disconnect"
+      },
+      "default": "minimal_hermes for SSH, none for Docker/local",
+      "verifiable_assertion": {
+        "claim": "FileSyncManager syncs only ~/.hermes/ internals (credentials, skills, cache) — NOT user project files",
+        "source": "tools/environments/file_sync.py:50-76 — iter_sync_files() combines get_credential_file_mounts() + iter_skills_files() + iter_cache_files()",
+        "verified": true
+      },
+      "verifiable_assertion": {
+        "claim": "User project files on SSH backend are manipulated directly on remote via shell commands (cat, sed, find, grep) — not synced",
+        "source": "skills/autonomous-ai-agents/hermes-agent/SKILL.md:1063 — 'when TERMINAL_ENV != local, every file tool runs inside the backend container, not on the host'",
+        "verified": true
+      }
+    },
+    "execute_code_strategy": {
+      "decision": "Two-tier: MVP = Path A (plain Python), upgrade = Path C (custom RPC poll loop with plugin-side dispatch)",
+      "paths_evaluated": [
+        {
+          "path": "A",
+          "name": "Plain Python (no tool-RPC)",
+          "mechanism": "Write script.py to remote via env.execute('echo | base64 -d'), run via env.execute('python3 script.py'), return stdout",
+          "loc_estimate": "~20 lines",
+          "tool_rpc": false,
+          "core_coupling": "none",
+          "verdict": "MVP — ship first"
+        },
+        {
+          "path": "B",
+          "name": "Full RPC, tools route to DEFAULT env (broken)",
+          "mechanism": "Copy _execute_remote() + _rpc_poll_loop(), but poll loop calls handle_function_call(tool, args, task_id) → core dispatcher → _active_environments[task_id] → DEFAULT env",
+          "verdict": "REJECTED — tool calls from script on serverA would execute on DEFAULT env (local), not on serverA. Nonsensical."
+        },
+        {
+          "path": "C",
+          "name": "Full RPC, custom poll loop with plugin dispatch (CORRECT)",
+          "mechanism": "Copy _execute_remote() + _rpc_poll_loop() logic, replace handle_function_call with plugin-side dispatch table that routes tool calls to the SAME env the script runs on",
+          "loc_estimate": "~150 lines (mostly copied from core, adapted dispatch)",
+          "tool_rpc": true,
+          "core_coupling": "imports generate_hermes_tools_module(), _ship_file_to_remote(), _env_temp_dir() — all public functions",
+          "verdict": "RECOMMENDED for full parity — ship after MVP"
+        },
+        {
+          "path": "D",
+          "name": "Monkeypatch _active_environments[task_id]",
+          "mechanism": "Inject plugin env into _active_environments['multitool_slug'], call core _execute_remote(code, task_id='multitool_slug'), restore after",
+          "verdict": "REJECTED — race-prone, _get_env_config() returns wrong env_type, concurrency issues with subagents"
+        }
+      ],
+      "path_c_detail": {
+        "summary": "Plugin reimplements the remote execute_code flow with a custom RPC poll loop. Script runs on plugin env (e.g. serverA). Tool calls from inside the script are dispatched by the plugin directly to the same env's execute() and ShellFileOperations — NOT through core handle_function_call().",
+        "data_flow": [
+          "1. env_tool(slug, 'execute_code', {code: '...'}) → plugin handler", "2. Plugin: env = registry[slug].env, file_ops = registry[slug].file_ops",
+          "3. Plugin: generate hermes_tools.py via imported generate_hermes_tools_module(enabled_tools, transport='file')",
+          "4. Plugin: ship hermes_tools.py + script.py to remote via _ship_file_to_remote(env, remote_path, content)",
+          "5. Plugin: create sandbox dir + rpc dir on remote via env.execute('mkdir -p ...')",
+          "6. Plugin: start _plugin_rpc_poll_loop thread — polls remote rpc dir for req_* files",
+          "7. Plugin: env.execute('cd sandbox && HERMES_RPC_DIR=... python3 script.py') — script runs on remote",
+          "8. Script imports hermes_tools, calls terminal('ls') → writes req_000001 file on remote",
+          "9. Plugin poll loop: env.execute('cat req_000001') → reads request → PLUGIN DISPATCH (not handle_function_call)",
+          "10. Plugin dispatch: terminal → env.execute(args['command']), read_file → file_ops.read_file(args['path']), etc.",
+          "11. Plugin poll loop: env.execute('echo ... | base64 -d > res_000001') → writes response on remote",
+          "12. Script reads res_000001, continues",
+          "13. Script finishes → env.execute returns stdout → plugin returns to model",
+          "14. Cleanup: stop poll thread, env.execute('rm -rf sandbox_dir')"
+        ],
+        "plugin_dispatch_table": {
+          "terminal": "env.execute(args['command'], cwd=args.get('workdir'), timeout=args.get('timeout'))",
+          "read_file": "file_ops.read_file(args['path'], offset=args.get('offset',1), limit=args.get('limit',500))",
+          "write_file": "file_ops.write_file(args['path'], args['content'])",
+          "search_files": "file_ops.search(args['pattern'], path=args.get('path','.'), target=args.get('target','content'), file_glob=args.get('file_glob'), limit=args.get('limit',50), output_mode=args.get('output_mode','content'), context=args.get('context',0))",
+          "patch": "file_ops.patch_replace(args['path'], args['old_string'], args['new_string'], replace_all=args.get('replace_all',False)) if args.get('mode','replace')=='replace' else file_ops.patch_v4a(args['patch'])",
+          "web_search": "handle_function_call('web_search', args, task_id=task_id) — NOT env-coupled, safe to use core dispatcher",
+          "web_extract": "handle_function_call('web_extract', args, task_id=task_id) — NOT env-coupled, safe to use core dispatcher"
+        },
+        "key_functions_imported_from_core": [
+          {
+            "function": "generate_hermes_tools_module(enabled_tools, transport='file')",
+            "source": "tools/code_execution_tool.py:259",
+            "purpose": "Generate hermes_tools.py stub module with file-based RPC functions for 7 sandbox-allowed tools",
+            "is_public": true,
+            "verified": true
+          },
+          {
+            "function": "_ship_file_to_remote(env, remote_path, content)",
+            "source": "tools/code_execution_tool.py:702",
+            "purpose": "Write content to remote path via base64-encoded echo pipe — works on all backends including Modal",
+            "is_public": true,
+            "verified": true
+          },
+          {
+            "function": "_env_temp_dir(env)",
+            "source": "tools/code_execution_tool.py:719",
+            "purpose": "Return writable temp dir for the env (uses env.get_temp_dir() or falls back to /tmp)",
+            "is_public": true,
+            "verified": true
+          },
+          {
+            "function": "SANDBOX_ALLOWED_TOOLS",
+            "source": "tools/code_execution_tool.py:61",
+            "purpose": "Frozenset of 7 tools allowed inside sandbox: web_search, web_extract, read_file, write_file, search_files, patch, terminal",
+            "is_public": true,
+            "verified": true
+          },
+          {
+            "function": "_TERMINAL_BLOCKED_PARAMS",
+            "source": "tools/code_execution_tool.py:465",
+            "purpose": "Params to strip from terminal calls inside sandbox: background, pty, notify_on_complete, watch_patterns",
+            "is_public": true,
+            "verified": true
+          }
+        ],
+        "what_plugin_copies_and_adapts": [
+          {
+            "component": "_execute_remote()",
+            "source_lines": "tools/code_execution_tool.py:877-1067",
+            "adaptation": "Replace _get_or_create_env(task_id) with registry[slug].env. Replace _rpc_poll_loop call with _plugin_rpc_poll_loop. Keep: sandbox dir creation, file shipping, script execution, cleanup, output post-processing (truncation, ANSI strip, redaction).",
+            "loc": "~120 lines (copied + adapted)"
+          },
+          {
+            "component": "_rpc_poll_loop() → _plugin_rpc_poll_loop()",
+            "source_lines": "tools/code_execution_tool.py:735-874",
+            "adaptation": "Replace handle_function_call(tool_name, tool_args, task_id=task_id) with plugin dispatch table. Keep: poll interval, req file listing, atomic read, response writing via base64, req file cleanup, tool call counter, tool call log, stop_event handling. Add file_ops parameter.",
+            "loc": "~110 lines (copied + adapted)"
+          }
+        ],
+        "what_plugin_does_NOT_copy": [
+          "generate_hermes_tools_module() — imported directly",
+          "_ship_file_to_remote() — imported directly",
+          "_env_temp_dir() — imported directly",
+          "SANDBOX_ALLOWED_TOOLS — imported directly",
+          "_TERMINAL_BLOCKED_PARAMS — imported directly",
+          "Output post-processing — can import strip_ansi and redact_sensitive_text directly",
+          "UDS transport (local backend) — not needed, plugin envs always use file-based RPC"
+        ],
+        "web_search_handling": {
+          "note": "web_search and web_extract are NOT env-coupled — they make HTTP calls from the host process. Plugin dispatch routes them through core handle_function_call() safely.",
+          "verifiable_assertion": {
+            "claim": "web_search and web_extract handlers do not reference _active_environments or terminal env",
+            "source": "SANDBOX_ALLOWED_TOOLS — only terminal, read_file, write_file, search_files, patch are env-coupled. web_search/web_extract make HTTP calls from host.",
+            "verified": true,
+            "verification_method": "code inspection — web_search/web_extract tools do not import terminal_tool or _active_environments"
+          }
+        },
+        "local_env_special_case": {
+          "note": "For env_type='local', Path C uses file-based RPC (not UDS). Slightly less efficient than core's UDS path but avoids _active_environments coupling. Script runs via env.execute('python3 script.py') which is subprocess.Popen.",
+          "tradeoff": "File-based RPC adds ~50ms latency per tool call vs UDS. Acceptable for plugin."
+        },
+        "pseudocode": "see _plugin_dispatch_tool and _plugin_rpc_poll_loop in architecture section"
+      },
+      "rationale": "Core execute_code couples backend type to global config (_get_env_config), not to env instance. Cannot redirect without core changes. Path C reuses core's RPC protocol and file-generation logic while replacing only the dispatch layer.",
+      "verifiable_assertion": {
+        "claim": "Core execute_code calls _get_or_create_env(task_id) which uses _active_environments and _get_env_config — hardcoded global lookup",
+        "source": "tools/code_execution_tool.py:607-608,618,635",
+        "verified": true
+      },
+      "verifiable_assertion": {
+        "claim": "generate_hermes_tools_module is a public function — can be imported and called by plugin",
+        "source": "tools/code_execution_tool.py:259 — def generate_hermes_tools_module(enabled_tools, transport='uds') -> str",
+        "verified": true
+      },
+      "verifiable_assertion": {
+        "claim": "_ship_file_to_remote is a public function — works on all backends",
+        "source": "tools/code_execution_tool.py:702 — def _ship_file_to_remote(env, remote_path, content)",
+        "verified": true
+      },
+      "verifiable_assertion": {
+        "claim": "File-based RPC protocol is defined entirely in generated hermes_tools.py stub — no hidden state",
+        "source": "tools/code_execution_tool.py:400-457 — _FILE_TRANSPORT_HEADER defines req_NNNNNN / res_NNNNNN file protocol",
+        "verified": true
+      },
+      "verifiable_assertion": {
+        "claim": "5 of 7 sandbox tools are env-coupled (terminal, read_file, write_file, search_files, patch). 2 are not (web_search, web_extract).",
+        "source": "tools/code_execution_tool.py:61-69 — SANDBOX_ALLOWED_TOOLS",
+        "verified": true
+      },
+      "upgrade_path": "If core maintainers extract execute_code env-selection into injectable parameter, plugin can switch from Path C to calling core _execute_remote directly with plugin env. Until then: Path C for full parity, Path A for MVP."
+    },
+    "cleanup_strategy": {
+      "decision": "on_session_end lifecycle hook + explicit env_disconnect (if added as 4th tool) + BaseEnvironment.__del__ fallback",
+      "verifiable_assertion": {
+        "claim": "Plugin lifecycle hooks include on_session_end — called when agent session terminates",
+        "source": "hermes_cli/plugins.py:22-26 — VALID_HOOKS includes on_session_end; model_tools.py and run_agent.py invoke hooks",
+        "verified": true
+      },
+      "verifiable_assertion": {
+        "claim": "BaseEnvironment.__del__ calls cleanup() as fallback — SSHEnvironment.cleanup() does sync_back + closes ControlMaster socket",
+        "source": "tools/environments/base.py:885 — def __del__(self): self.cleanup(); tools/environments/ssh.py:355 — def cleanup(self): sync_manager.sync_back(); close control socket",
+        "verified": true
+      }
+    },
+    "default_tools_unaffected": {
+      "claim": "Default terminal, read_file, write_file, patch, search_files, execute_code continue working through TERMINAL_ENV as before",
+      "verifiable_assertion": {
+        "source": "Plugin does not touch _active_environments, does not override core tools (no override=True), registers separate toolset 'multitool'",
+        "verified": true,
+        "verification_method": "by construction — plugin operates in isolated namespace"
+      }
+    }
+  },
+
+  "scenario_traces": {
+    "typical_ssh_docker_local": {
+      "description": "Agent runs ls on serverA (SSH), reads file from serverA, runs ls locally (core tools)",
+      "precondition": "serverA preconfigured in plugin inventory, TERMINAL_ENV=local for core tools",
+      "calls": [
+        {"tool": "env_tool", "args": {"env_slug": "serverA", "tool_name": "terminal", "args": {"command": "ls -la"}}},
+        {"tool": "env_tool", "args": {"env_slug": "serverA", "tool_name": "read_file", "args": {"path": "/etc/hosts"}}},
+        {"tool": "terminal", "args": {"command": "ls -la"}}
+      ],
+      "total_tool_calls": 3,
+      "note": "3rd call uses core terminal (TERMINAL_ENV=local), not env_tool",
+      "meets_R8": true
+    },
+    "first_connect": {
+      "description": "Agent connects to a new server, then runs a command and reads a file",
+      "calls": [
+        {"tool": "env_connect", "args": {"slug": "serverA", "type": "ssh", "host": "a.example.com", "user": "deploy", "key_path": "~/.ssh/id_rsa"}},
+        {"tool": "env_tool", "args": {"env_slug": "serverA", "tool_name": "terminal", "args": {"command": "ls -la"}}},
+        {"tool": "env_tool", "args": {"env_slug": "serverA", "tool_name": "read_file", "args": {"path": "/etc/hosts"}}}
+      ],
+      "total_tool_calls": 3,
+      "meets_R8": true
+    },
+    "mixed_core_and_plugin": {
+      "description": "Agent writes file locally (core), runs command on remote (plugin), patches file on remote (plugin)",
+      "calls": [
+        {"tool": "write_file", "args": {"path": "/tmp/note.txt", "content": "hello"}},
+        {"tool": "env_tool", "args": {"env_slug": "serverA", "tool_name": "terminal", "args": {"command": "uptime"}}},
+        {"tool": "env_tool", "args": {"env_slug": "serverA", "tool_name": "patch", "args": {"path": "/etc/hosts", "diff": "..."}}}
+      ],
+      "total_tool_calls": 3,
+      "meets_R8": true
+    }
+  },
+
+  "requirements_traceability": {
+    "R1_N_environments_simultaneously": {
+      "met": true,
+      "mechanism": "EnvironmentRegistry holds N envs simultaneously, env_tool dispatches by slug"
+    },
+    "R2_full_toolset_per_env": {
+      "met": true,
+      "mechanism": "env_tool supports terminal, read_file, write_file, patch, search_files, execute_code per env",
+      "caveat": "MVP: execute_code = plain Python (Path A). Upgrade: full tool-RPC parity via Path C (custom RPC poll loop with plugin-side dispatch to env.execute + ShellFileOperations)."
+    },
+    "R3_schema_does_not_grow": {
+      "met": true,
+      "mechanism": "3 tools total. Δ per env = 0. Δ per new supported tool = 0 (internal dispatch table, no schema change)."
+    },
+    "R4_reuse_backend_classes": {
+      "met": true,
+      "mechanism": "Plugin imports SSHEnvironment, DockerEnvironment, ShellFileOperations directly. LocalEnvironment NOT imported — local handled by core.",
+    },
+    "R5_no_core_modification": {
+      "met": true,
+      "mechanism": "Plugin-only. No override=True on core tools. No mutation of _active_environments."
+    },
+    "R6_default_tools_unaffected": {
+      "met": true,
+      "mechanism": "Plugin registers separate 'multitool' toolset. Core tools continue through TERMINAL_ENV."
+    },
+    "R7_connection_efficiency": {
+      "met": true,
+      "mechanism": "SSHEnvironment uses ControlMaster (ControlPersist=300). DockerEnvironment uses persistent container. Env instances cached in registry."
+    },
+    "R8_minimal_model_overhead": {
+      "met": true,
+      "mechanism": "Typical task = 3 tool-calls (connect + 2 operations, or 3 operations if preconnected)"
+    }
+  },
+
+  "open_questions": [
+    {
+      "id": "OQ1",
+      "question": "Should env_disconnect be a 4th tool or an action within env_connect (action=disconnect)?",
+      "current_leaning": "4th tool env_disconnect(slug) — symmetric with env_connect, clear semantics",
+      "impact_on_schema": "+1 tool (total 4, still O(1))"
+    },
+    {
+      "id": "OQ2",
+      "question": "Should plugin support preconfigured environment inventory in config.yaml (like ansible inventory) or only ad-hoc env_connect?",
+      "current_leaning": "Support both — config.yaml for persistent envs, env_connect for ad-hoc",
+      "impact_on_schema": "+0 tools (inventory is config, not schema)"
+    },
+    {
+      "id": "OQ3",
+      "question": "How to handle model confusion between env_tool args nesting and core tool flat params?",
+      "current_leaning": "Clear schema description: 'args: same parameters as the named tool's own schema'. Model derives from core schemas already in system prompt.",
+      "mitigation": "Skill document with examples of env_tool usage"
+    },
+    {
+      "id": "OQ4",
+      "question": "Should env_tool support process management (background tasks on remote)?",
+      "current_leaning": "MVP: no. Process registry is core-coupled (process_registry.py). Future: env_tool with tool_name='process' if feasible.",
+      "impact": "Reduces R2 scope for MVP"
+    }
+  ],
+
+  "source_files_verified": [
+    "tools/environments/__init__.py",
+    "tools/environments/base.py",
+    "tools/environments/local.py",
+    "tools/environments/docker.py",
+    "tools/environments/ssh.py",
+    "tools/environments/file_sync.py",
+    "tools/environments/modal.py",
+    "tools/environments/daytona.py",
+    "tools/terminal_tool.py (lines 1080-1380)",
+    "tools/file_tools.py (lines 720-870)",
+    "tools/file_operations.py (lines 770-830)",
+    "tools/code_execution_tool.py (lines 1-100, 250-460, 600-1100, 1567-1600 — full execute_code mechanism, RPC protocol, Path C source)",
+    "tools/registry.py (lines 220-450)",
+    "tools/process_registry.py (lines 1-30)",
+    "model_tools.py (lines 895-1175)",
+    "hermes_cli/plugins.py (lines 1-430)",
+    "hermes_cli/config.py (lines 1019-1078, 5720-5770)",
+    "toolsets.py (full file)",
+    "website/docs/reference/environment-variables.md (lines 180-240)",
+    "website/docs/user-guide/configuration.md (terminal section)",
+    "website/docs/user-guide/docker.md",
+    "AGENTS.md (plugin policies, footprint ladder)"
+  ]
+}

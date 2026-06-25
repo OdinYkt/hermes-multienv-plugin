@@ -1,0 +1,12 @@
+name: multitool
+version: 0.1.0
+description: "Multi-environment tool plugin — work with multiple SSH and Docker environments simultaneously"
+author: NousResearch
+kind: standalone
+provides_tools:
+  - env_connect
+  - env_list
+  - env_tool
+  - env_disconnect
+hooks:
+  - on_session_end
