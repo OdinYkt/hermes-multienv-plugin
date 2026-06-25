@@ -309,3 +309,57 @@ def test_existing_container_e2e():
     }, task_id="test"))
     assert "error" in result
     assert "not found" in result["error"].lower() or "not running" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Check 5 — execute_code Path C: tool-RPC parity on Docker
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not shutil.which("docker"), reason="Docker not available")
+def test_execute_code_path_c_tool_rpc():
+    """Script on remote can call hermes_tools.terminal/read_file/write_file via RPC."""
+    from multitool.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect
+
+    # 1. Connect to Docker
+    result = json.loads(handle_env_connect({
+        "slug": "rpctest",
+        "type": "docker",
+        "image": "python:3.12-slim",
+        "cwd": "/root",
+    }, task_id="test"))
+    assert result.get("status") == "ok", f"connect failed: {result}"
+
+    try:
+        # 2. Script calls hermes_tools.terminal() — tool-RPC round-trip
+        code = """
+import hermes_tools
+result = hermes_tools.terminal('echo RPC_WORKS')
+print('TOOL_RESULT:', result)
+"""
+        result = json.loads(handle_env_tool({
+            "env_slug": "rpctest",
+            "tool_name": "execute_code",
+            "args": {"code": code},
+        }, task_id="test"))
+        assert result.get("status") == "success", f"execute_code failed: {result}"
+        assert "RPC_WORKS" in result.get("output", ""), f"RPC output missing: {result}"
+        assert result.get("tool_calls_made", 0) >= 1, f"expected >=1 tool call, got: {result}"
+
+        # 3. Script calls hermes_tools.write_file() + read_file()
+        code2 = """
+import hermes_tools
+hermes_tools.write_file('/tmp/rpc_test.txt', 'RPC_FILE_CONTENT')
+r = hermes_tools.read_file('/tmp/rpc_test.txt')
+print('FILE_CONTENT:', r)
+"""
+        result = json.loads(handle_env_tool({
+            "env_slug": "rpctest",
+            "tool_name": "execute_code",
+            "args": {"code": code2},
+        }, task_id="test"))
+        assert result.get("status") == "success", f"execute_code write+read failed: {result}"
+        assert "RPC_FILE_CONTENT" in result.get("output", ""), f"file content missing: {result}"
+        assert result.get("tool_calls_made", 0) >= 2, f"expected >=2 tool calls, got: {result}"
+
+    finally:
+        handle_env_disconnect({"slug": "rpctest"}, task_id="test")

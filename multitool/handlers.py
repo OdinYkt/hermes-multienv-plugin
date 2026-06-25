@@ -9,8 +9,8 @@ import json
 import logging
 from typing import Any, Dict
 
-from plugins.multitool.registry import registry
-from plugins.multitool.utils import format_error, format_success, postprocess_output
+from multitool.registry import registry
+from multitool.utils import format_error, format_success, postprocess_output
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ def handle_env_tool(args: Dict[str, Any], **kwargs: Any) -> str:
 
     env, file_ops, _meta = entry
 
-    from plugins.multitool.dispatch import DISPATCH_TABLE
+    from multitool.dispatch import DISPATCH_TABLE
 
     dispatch_fn = DISPATCH_TABLE.get(tool_name)
     if dispatch_fn is None:

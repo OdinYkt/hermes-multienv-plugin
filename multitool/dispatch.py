@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from plugins.multitool.utils import format_error, format_success, postprocess_output
+from multitool.utils import format_error, format_success, postprocess_output
 
 logger = logging.getLogger(__name__)
 
@@ -169,15 +169,11 @@ def dispatch_search_files(env, file_ops, args: Dict[str, Any], task_id: Optional
     )
 
 
-# ---------------------------------------------------------------------------
-# execute_code (Path A — plain Python)
-# ---------------------------------------------------------------------------
-
 def dispatch_execute_code(env, file_ops, args: Dict[str, Any], task_id: Optional[str]) -> str:
-    from plugins.multitool.execute_code import execute_plain_python
+    from multitool.execute_code import execute_with_rpc
 
     code = args.get("code", "")
-    return execute_plain_python(env, code)
+    return execute_with_rpc(env, file_ops, code, task_id=task_id)
 
 
 # ---------------------------------------------------------------------------

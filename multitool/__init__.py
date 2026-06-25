@@ -11,14 +11,14 @@ environments simultaneously:
 
 import logging
 
-from plugins.multitool.schemas import (
+from multitool.schemas import (
     ENV_CONNECT_SCHEMA,
     ENV_DISCONNECT_SCHEMA,
     ENV_LIST_SCHEMA,
     ENV_TOOL_SCHEMA,
 )
-from plugins.multitool.registry import registry as _registry
-from plugins.multitool.handlers import (
+from multitool.registry import registry as _registry
+from multitool.handlers import (
     handle_env_connect,
     handle_env_disconnect,
     handle_env_list,
