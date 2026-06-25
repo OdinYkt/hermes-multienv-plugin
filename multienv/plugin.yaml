@@ -1,7 +1,7 @@
 name: multienv
 version: 0.1.0
 description: "Multi-environment tool plugin — work with multiple SSH and Docker environments simultaneously"
-author: NousResearch
+author: odinykt
 kind: standalone
 provides_tools:
   - env_connect
