@@ -65,7 +65,18 @@ ENV_CONNECT_SCHEMA: Dict[str, Any] = {
             # Docker-specific
             "image": {
                 "type": "string",
-                "description": "Docker: image name (e.g. 'node:22', 'python:3.12').",
+                "description": (
+                    "Docker: image name to create a NEW container from (e.g. 'node:22', 'python:3.12'). "
+                    "Use 'container' instead to attach to an existing running container."
+                ),
+            },
+            "container": {
+                "type": "string",
+                "description": (
+                    "Docker: name or ID of an EXISTING running container to attach to. "
+                    "When provided, 'image' is ignored. The container must already be running. "
+                    "The plugin will NOT stop or remove this container on disconnect."
+                ),
             },
             "volumes": {
                 "type": "array",

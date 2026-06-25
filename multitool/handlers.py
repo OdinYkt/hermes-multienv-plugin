@@ -66,25 +66,40 @@ def handle_env_connect(args: Dict[str, Any], **kwargs: Any) -> str:
             )
 
         elif env_type == "docker":
+            container = args.get("container")
             image = args.get("image")
-            if not image:
-                return format_error("Docker connection requires 'image' parameter")
 
-            from tools.environments.docker import DockerEnvironment
+            if container:
+                # Attach to an EXISTING running container
+                from multitool.docker_existing import ExistingDockerEnvironment
 
-            env = DockerEnvironment(
-                image=image,
-                cwd=cwd or "/root",
-                timeout=timeout,
-                cpu=0,
-                memory=0,
-                disk=0,
-                persistent_filesystem=True,
-                task_id=slug,
-                volumes=args.get("volumes"),
-                auto_mount_cwd=args.get("auto_mount_cwd", False),
-                persist_across_processes=False,
-            )
+                env = ExistingDockerEnvironment(
+                    container=container,
+                    cwd=cwd or "/",
+                    timeout=timeout,
+                )
+            elif image:
+                # Create a NEW container from image
+                from tools.environments.docker import DockerEnvironment
+
+                env = DockerEnvironment(
+                    image=image,
+                    cwd=cwd or "/root",
+                    timeout=timeout,
+                    cpu=0,
+                    memory=0,
+                    disk=0,
+                    persistent_filesystem=True,
+                    task_id=slug,
+                    volumes=args.get("volumes"),
+                    auto_mount_cwd=args.get("auto_mount_cwd", False),
+                    persist_across_processes=False,
+                )
+            else:
+                return format_error(
+                    "Docker connection requires either 'image' (to create a new container) "
+                    "or 'container' (to attach to an existing running container)"
+                )
 
         else:
             return format_error(

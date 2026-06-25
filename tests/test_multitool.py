@@ -230,3 +230,82 @@ def test_error_paths():
     result = json.loads(handle_env_disconnect({}, task_id="test"))
     assert "error" in result
     assert "slug" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Check 4 — Existing container E2E: connect to running container, verify it survives disconnect
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not shutil.which("docker"), reason="Docker not available")
+def test_existing_container_e2e():
+    """Connect to an existing running container, run a command, disconnect, verify container still running."""
+    import subprocess
+    from multitool.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect, handle_env_list
+
+    container_name = "multitool-existing-test"
+
+    # 0. Start a container manually (simulates an externally-managed container)
+    try:
+        subprocess.run(["docker", "rm", "-f", container_name],
+                       capture_output=True, timeout=10)
+        result = subprocess.run(
+            ["docker", "run", "-d", "--name", container_name, "python:3.12-slim", "sleep", "300"],
+            capture_output=True, text=True, timeout=60,
+        )
+        assert result.returncode == 0, f"docker run failed: {result.stderr}"
+    except Exception as exc:
+        pytest.skip(f"Could not start container: {exc}")
+
+    try:
+        # 1. Connect to the EXISTING container
+        result = json.loads(handle_env_connect({
+            "slug": "existingbox",
+            "type": "docker",
+            "container": container_name,
+            "cwd": "/root",
+        }, task_id="test"))
+        assert result.get("status") == "ok", f"connect failed: {result}"
+        assert result["slug"] == "existingbox"
+
+        # 2. Run terminal command
+        result = json.loads(handle_env_tool({
+            "env_slug": "existingbox",
+            "tool_name": "terminal",
+            "args": {"command": "echo EXISTING_OK"},
+        }, task_id="test"))
+        assert result.get("exit_code") == 0, f"terminal failed: {result}"
+        assert "EXISTING_OK" in result.get("output", "")
+
+        # 3. Disconnect (should NOT stop or remove the container)
+        result = json.loads(handle_env_disconnect({
+            "slug": "existingbox",
+        }, task_id="test"))
+        assert result.get("status") == "disconnected"
+
+        # 4. Verify container is STILL running (not stopped by disconnect)
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Running}}", container_name],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.stdout.strip() == "true", (
+            f"Container '{container_name}' was stopped by disconnect! "
+            f"inspect output: {result.stdout.strip()}"
+        )
+
+        # 5. List should be empty after disconnect
+        result = json.loads(handle_env_list({}, task_id="test"))
+        assert result["environments"] == []
+
+    finally:
+        # Cleanup: stop and remove the container we started
+        subprocess.run(["docker", "rm", "-f", container_name],
+                       capture_output=True, timeout=15)
+
+    # 6. Error: connect to nonexistent container
+    result = json.loads(handle_env_connect({
+        "slug": "badbox",
+        "type": "docker",
+        "container": "nonexistent-container-xyz",
+    }, task_id="test"))
+    assert "error" in result
+    assert "not found" in result["error"].lower() or "not running" in result["error"].lower()
