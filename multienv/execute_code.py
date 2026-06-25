@@ -14,7 +14,7 @@ import shlex
 import uuid
 from typing import Any
 
-from multitool.utils import postprocess_output
+from multienv.utils import postprocess_output
 
 logger = logging.getLogger(__name__)
 

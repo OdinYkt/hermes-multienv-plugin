@@ -1,4 +1,4 @@
-"""JSON Schema definitions for multitool plugin tools."""
+"""JSON Schema definitions for multienv plugin tools."""
 
 from typing import Any, Dict
 

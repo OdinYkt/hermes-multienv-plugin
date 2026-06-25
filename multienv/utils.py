@@ -1,4 +1,4 @@
-"""Utility helpers for multitool plugin."""
+"""Utility helpers for multienv plugin."""
 
 import json
 from typing import Any, Dict, Optional

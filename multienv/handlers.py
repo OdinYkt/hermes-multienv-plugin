@@ -1,4 +1,4 @@
-"""Tool handlers for the multitool plugin.
+"""Tool handlers for the multienv plugin.
 
 Each handler receives (args: dict, **kwargs) where kwargs include
 task_id and session_id from the registry dispatch chain.
@@ -9,8 +9,8 @@ import json
 import logging
 from typing import Any, Dict
 
-from multitool.registry import registry
-from multitool.utils import format_error, format_success, postprocess_output
+from multienv.registry import registry
+from multienv.utils import format_error, format_success, postprocess_output
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def handle_env_connect(args: Dict[str, Any], **kwargs: Any) -> str:
 
             if container:
                 # Attach to an EXISTING running container
-                from multitool.docker_existing import ExistingDockerEnvironment
+                from multienv.docker_existing import ExistingDockerEnvironment
 
                 env = ExistingDockerEnvironment(
                     container=container,
@@ -164,7 +164,7 @@ def handle_env_tool(args: Dict[str, Any], **kwargs: Any) -> str:
 
     env, file_ops, _meta = entry
 
-    from multitool.dispatch import DISPATCH_TABLE
+    from multienv.dispatch import DISPATCH_TABLE
 
     dispatch_fn = DISPATCH_TABLE.get(tool_name)
     if dispatch_fn is None:

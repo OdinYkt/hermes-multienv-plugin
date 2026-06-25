@@ -140,9 +140,9 @@
   },
 
   "architecture": {
-    "plugin_location": "~/.hermes/plugins/multitool/",
+    "plugin_location": "~/.hermes/plugins/multienv/",
     "plugin_files": ["plugin.yaml", "__init__.py"],
-    "toolset_name": "multitool",
+    "toolset_name": "multienv",
     "registry_design": {
       "class": "EnvironmentRegistry",
       "state": {
@@ -260,7 +260,7 @@
         {
           "path": "D",
           "name": "Monkeypatch _active_environments[task_id]",
-          "mechanism": "Inject plugin env into _active_environments['multitool_slug'], call core _execute_remote(code, task_id='multitool_slug'), restore after",
+          "mechanism": "Inject plugin env into _active_environments['multienv_slug'], call core _execute_remote(code, task_id='multienv_slug'), restore after",
           "verdict": "REJECTED — race-prone, _get_env_config() returns wrong env_type, concurrency issues with subagents"
         }
       ],
@@ -409,7 +409,7 @@
     "default_tools_unaffected": {
       "claim": "Default terminal, read_file, write_file, patch, search_files, execute_code continue working through TERMINAL_ENV as before",
       "verifiable_assertion": {
-        "source": "Plugin does not touch _active_environments, does not override core tools (no override=True), registers separate toolset 'multitool'",
+        "source": "Plugin does not touch _active_environments, does not override core tools (no override=True), registers separate toolset 'multienv'",
         "verified": true,
         "verification_method": "by construction — plugin operates in isolated namespace"
       }
@@ -475,7 +475,7 @@
     },
     "R6_default_tools_unaffected": {
       "met": true,
-      "mechanism": "Plugin registers separate 'multitool' toolset. Core tools continue through TERMINAL_ENV."
+      "mechanism": "Plugin registers separate 'multienv' toolset. Core tools continue through TERMINAL_ENV."
     },
     "R7_connection_efficiency": {
       "met": true,

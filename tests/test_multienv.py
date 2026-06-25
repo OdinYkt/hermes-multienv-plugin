@@ -1,4 +1,4 @@
-"""Tests for the multitool plugin — 3 checks covering the real user path.
+"""Tests for the multienv plugin — 3 checks covering the real user path.
 
 Check 1: Plugin discovery + register (no external deps)
 Check 2: Docker E2E (skip if no Docker)
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Ensure both project root (for multitool) and hermes-agent (for tools, hermes_cli, etc.) are on sys.path
+# Ensure both project root (for multienv) and hermes-agent (for tools, hermes_cli, etc.) are on sys.path
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 import sys
 for _p in [_PROJECT_ROOT, _PROJECT_ROOT / "hermes-agent"]:
@@ -31,7 +31,7 @@ def _isolate_hermes_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
     (tmp_path / ".hermes").mkdir(exist_ok=True)
     # Clear the registry singleton between tests
-    from multitool.registry import registry
+    from multienv.registry import registry
     registry.clear()
     yield
     registry.clear()
@@ -42,9 +42,9 @@ def _isolate_hermes_home(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_plugin_discovered_and_registered():
-    """Hermes finds multitool plugin, register(ctx) called, 4 tools in registry."""
-    from multitool import register
-    from multitool.schemas import (
+    """Hermes finds multienv plugin, register(ctx) called, 4 tools in registry."""
+    from multienv import register
+    from multienv.schemas import (
         ENV_CONNECT_SCHEMA,
         ENV_DISCONNECT_SCHEMA,
         ENV_LIST_SCHEMA,
@@ -73,9 +73,9 @@ def test_plugin_discovered_and_registered():
     tool_names = {t["name"] for t in ctx.registered_tools}
     assert tool_names == {"env_connect", "env_list", "env_tool", "env_disconnect"}
 
-    # All under "multitool" toolset
+    # All under "multienv" toolset
     for t in ctx.registered_tools:
-        assert t["toolset"] == "multitool"
+        assert t["toolset"] == "multienv"
 
     # on_session_end hook registered
     assert any(name == "on_session_end" for name, _ in ctx.hooks)
@@ -95,7 +95,7 @@ def test_plugin_discovered_and_registered():
 @pytest.mark.skipif(not shutil.which("docker"), reason="Docker not available")
 def test_docker_e2e_user_path():
     """Full user path: connect Docker → run command → read file → write file → disconnect."""
-    from multitool.handlers import (
+    from multienv.handlers import (
         handle_env_connect,
         handle_env_disconnect,
         handle_env_list,
@@ -176,7 +176,7 @@ def test_docker_e2e_user_path():
 def test_error_paths():
     """Invalid slug, missing params, unknown tool_name → correct errors."""
 
-    from multitool.handlers import handle_env_connect, handle_env_tool
+    from multienv.handlers import handle_env_connect, handle_env_tool
 
     # 3a. env_tool with invalid slug
     result = json.loads(handle_env_tool({
@@ -226,7 +226,7 @@ def test_error_paths():
     assert "tool_name" in result["error"].lower()
 
     # 3g. env_disconnect with missing slug
-    from multitool.handlers import handle_env_disconnect
+    from multienv.handlers import handle_env_disconnect
     result = json.loads(handle_env_disconnect({}, task_id="test"))
     assert "error" in result
     assert "slug" in result["error"].lower()
@@ -240,9 +240,9 @@ def test_error_paths():
 def test_existing_container_e2e():
     """Connect to an existing running container, run a command, disconnect, verify container still running."""
     import subprocess
-    from multitool.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect, handle_env_list
+    from multienv.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect, handle_env_list
 
-    container_name = "multitool-existing-test"
+    container_name = "multienv-existing-test"
 
     # 0. Start a container manually (simulates an externally-managed container)
     try:
@@ -318,7 +318,7 @@ def test_existing_container_e2e():
 @pytest.mark.skipif(not shutil.which("docker"), reason="Docker not available")
 def test_execute_code_path_c_tool_rpc():
     """Script on remote can call hermes_tools.terminal/read_file/write_file via RPC."""
-    from multitool.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect
+    from multienv.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect
 
     # 1. Connect to Docker
     result = json.loads(handle_env_connect({

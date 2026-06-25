@@ -7,7 +7,7 @@ Subagent-driven development plan. Each task = atomic, delegable unit.
 ## File Structure
 
 ```
-plugins/multitool/
+plugins/multienv/
 ├── plugin.yaml              # Manifest
 ├── __init__.py              # register(ctx) entry point, tool registration, hooks
 ├── registry.py              # EnvironmentRegistry class
@@ -18,11 +18,11 @@ plugins/multitool/
 └── utils.py                 # Slug generation, result formatting, error helpers
 
 tests/plugins/
-├── test_multitool_registry.py     # EnvironmentRegistry unit tests
-├── test_multitool_connect.py      # env_connect handler tests
-├── test_multitool_tool.py         # env_tool dispatch tests
-├── test_multitool_disconnect.py   # env_disconnect handler tests
-└── test_multitool_integration.py  # End-to-end: connect → tool → disconnect
+├── test_multienv_registry.py     # EnvironmentRegistry unit tests
+├── test_multienv_connect.py      # env_connect handler tests
+├── test_multienv_tool.py         # env_tool dispatch tests
+├── test_multienv_disconnect.py   # env_disconnect handler tests
+└── test_multienv_integration.py  # End-to-end: connect → tool → disconnect
 ```
 
 ---
@@ -35,7 +35,7 @@ tests/plugins/
 
 #### T1: plugin.yaml + schemas.py
 
-**Files:** `plugins/multitool/plugin.yaml`, `plugins/multitool/schemas.py`
+**Files:** `plugins/multienv/plugin.yaml`, `plugins/multienv/schemas.py`
 **Category:** quick
 **Skills:** []
 **Complexity:** S
@@ -45,7 +45,7 @@ tests/plugins/
 
 `plugin.yaml`:
 ```yaml
-name: multitool
+name: multienv
 version: 0.1.0
 description: "Multi-environment tool plugin — work with multiple SSH and Docker environments simultaneously"
 author: NousResearch
@@ -65,13 +65,13 @@ hooks:
 - `ENV_TOOL_SCHEMA`: properties = env_slug (string), tool_name (string, enum: terminal, read_file, write_file, patch, search_files, execute_code), args (object, additionalProperties: True). Required: env_slug, tool_name, args.
 - `ENV_DISCONNECT_SCHEMA`: properties = slug (string). Required: slug.
 
-**QA:** `python -c "from plugins.multitool.schemas import *; print(ENV_CONNECT_SCHEMA['name'])"` → prints `env_connect`
+**QA:** `python -c "from plugins.multienv.schemas import *; print(ENV_CONNECT_SCHEMA['name'])"` → prints `env_connect`
 
 ---
 
 #### T2: registry.py — EnvironmentRegistry
 
-**Files:** `plugins/multitool/registry.py`
+**Files:** `plugins/multienv/registry.py`
 **Category:** deep
 **Skills:** []
 **Complexity:** M
@@ -108,7 +108,7 @@ Thread-safe with `threading.Lock`. `disconnect` returns meta so caller can call 
 
 #### T3: utils.py — helpers
 
-**Files:** `plugins/multitool/utils.py`
+**Files:** `plugins/multienv/utils.py`
 **Category:** quick
 **Skills:** []
 **Complexity:** S
@@ -131,7 +131,7 @@ Thread-safe with `threading.Lock`. `disconnect` returns meta so caller can call 
 
 #### T4: handlers.py — env_connect handler
 
-**Files:** `plugins/multitool/handlers.py` (partial — env_connect only)
+**Files:** `plugins/multienv/handlers.py` (partial — env_connect only)
 **Category:** deep
 **Skills:** []
 **Complexity:** M
@@ -165,7 +165,7 @@ Thread-safe with `threading.Lock`. `disconnect` returns meta so caller can call 
 
 #### T5: handlers.py — env_list handler
 
-**Files:** `plugins/multitool/handlers.py` (add env_list)
+**Files:** `plugins/multienv/handlers.py` (add env_list)
 **Category:** quick
 **Skills:** []
 **Complexity:** S
@@ -182,7 +182,7 @@ Thread-safe with `threading.Lock`. `disconnect` returns meta so caller can call 
 
 #### T6: dispatch.py — env_tool dispatch table
 
-**Files:** `plugins/multitool/dispatch.py`
+**Files:** `plugins/multienv/dispatch.py`
 **Category:** deep
 **Skills:** []
 **Complexity:** M
@@ -258,7 +258,7 @@ def dispatch_search_files(env, file_ops, args, task_id):
 
 def dispatch_execute_code(env, file_ops, args, task_id):
     # MVP: Path A — plain Python
-    from plugins.multitool.execute_code import execute_plain_python
+    from plugins.multienv.execute_code import execute_plain_python
     return execute_plain_python(env, args.get("code", ""))
 
 DISPATCH_TABLE = {
@@ -277,7 +277,7 @@ DISPATCH_TABLE = {
 
 #### T7: execute_code.py — Path A (plain Python)
 
-**Files:** `plugins/multitool/execute_code.py`
+**Files:** `plugins/multienv/execute_code.py`
 **Category:** quick
 **Skills:** []
 **Complexity:** S
@@ -287,7 +287,7 @@ DISPATCH_TABLE = {
 
 ```python
 import base64, json, shlex, uuid
-from plugins.multitool.utils import truncate_output, strip_ansi_and_redact
+from plugins.multienv.utils import truncate_output, strip_ansi_and_redact
 
 def execute_plain_python(env, code: str) -> str:
     if not code:
@@ -348,7 +348,7 @@ def execute_plain_python(env, code: str) -> str:
 
 #### T8: handlers.py — env_tool handler + env_disconnect handler
 
-**Files:** `plugins/multitool/handlers.py` (add env_tool + env_disconnect)
+**Files:** `plugins/multienv/handlers.py` (add env_tool + env_disconnect)
 **Category:** deep
 **Skills:** []
 **Complexity:** M
@@ -374,7 +374,7 @@ def handle_env_tool(args, **kwargs):
     
     env, file_ops, meta = entry
     
-    from plugins.multitool.dispatch import DISPATCH_TABLE
+    from plugins.multienv.dispatch import DISPATCH_TABLE
     dispatch_fn = DISPATCH_TABLE.get(tool_name)
     if dispatch_fn is None:
         return format_error(f"Unknown tool_name: '{tool_name}'. Supported: {', '.join(DISPATCH_TABLE.keys())}")
@@ -414,7 +414,7 @@ def handle_env_disconnect(args, **kwargs):
 
 #### T9: __init__.py — register() entry point + on_session_end hook
 
-**Files:** `plugins/multitool/__init__.py`
+**Files:** `plugins/multienv/__init__.py`
 **Category:** quick
 **Skills:** []
 **Complexity:** S
@@ -423,12 +423,12 @@ def handle_env_disconnect(args, **kwargs):
 **Create:**
 
 ```python
-from plugins.multitool.schemas import (
+from plugins.multienv.schemas import (
     ENV_CONNECT_SCHEMA, ENV_LIST_SCHEMA,
     ENV_TOOL_SCHEMA, ENV_DISCONNECT_SCHEMA,
 )
-from plugins.multitool.registry import registry as _registry
-from plugins.multitool.handlers import (
+from plugins.multienv.registry import registry as _registry
+from plugins.multienv.handlers import (
     handle_env_connect, handle_env_list,
     handle_env_tool, handle_env_disconnect,
 )
@@ -444,7 +444,7 @@ def register(ctx) -> None:
     for name, schema, handler, emoji in _TOOLS:
         ctx.register_tool(
             name=name,
-            toolset="multitool",
+            toolset="multienv",
             schema=schema,
             handler=handler,
             emoji=emoji,
@@ -455,7 +455,7 @@ def _on_session_end(**kwargs):
     _registry.cleanup_all()
 ```
 
-**QA:** `python -c "from plugins.multitool import register; print(callable(register))"` → True
+**QA:** `python -c "from plugins.multienv import register; print(callable(register))"` → True
 
 ---
 
@@ -463,9 +463,9 @@ def _on_session_end(**kwargs):
 
 ---
 
-#### T10: test_multitool.py — 3 checks covering real user path
+#### T10: test_multienv.py — 3 checks covering real user path
 
-**Files:** `tests/plugins/test_multitool.py`
+**Files:** `tests/plugins/test_multienv.py`
 **Category:** deep
 **Skills:** ["test-driven-development"]
 **Complexity:** M
@@ -476,22 +476,22 @@ def _on_session_end(**kwargs):
 **Check 1 — Plugin discovery + register**
 ```python
 def test_plugin_discovered_and_registered():
-    """Hermes finds multitool plugin, register(ctx) called, 4 tools in registry."""
+    """Hermes finds multienv plugin, register(ctx) called, 4 tools in registry."""
     from hermes_cli.plugins import PluginManager
     from tools.registry import registry
     # simulate plugin discovery
     mgr = PluginManager()
     mgr.discover()
-    # find multitool
-    assert any(p.manifest.name == "multitool" for p in mgr._plugins)
+    # find multienv
+    assert any(p.manifest.name == "multienv" for p in mgr._plugins)
     # register it
-    from plugins.multitool import register
+    from plugins.multienv import register
     class FakeCtx:
         def register_tool(self, **kw): registry.register(**kw)
         def register_hook(self, *a, **kw): pass
     register(FakeCtx())
-    # 4 tools under multitool toolset
-    tool_names = registry.get_tool_names_for_toolset("multitool")
+    # 4 tools under multienv toolset
+    tool_names = registry.get_tool_names_for_toolset("multienv")
     assert set(tool_names) == {"env_connect", "env_list", "env_tool", "env_disconnect"}
 ```
 
@@ -500,7 +500,7 @@ def test_plugin_discovered_and_registered():
 @pytest.mark.skipif(not shutil.which("docker"), reason="no docker")
 def test_docker_e2e_user_path():
     """Full user path: connect Docker → run command → read file → write file → disconnect."""
-    from plugins.multitool.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect, handle_env_list
+    from plugins.multienv.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect, handle_env_list
     # 1. Connect to alpine container
     result = json.loads(handle_env_connect({
         "slug": "testbox",
@@ -551,7 +551,7 @@ def test_docker_e2e_user_path():
 ```python
 def test_error_paths():
     """Invalid slug, missing params, unknown tool_name → correct errors."""
-    from plugins.multitool.handlers import handle_env_tool, handle_env_connect
+    from plugins.multienv.handlers import handle_env_tool, handle_env_connect
     # Invalid slug
     result = json.loads(handle_env_tool({
         "env_slug": "nonexistent",
@@ -586,7 +586,7 @@ def test_error_paths():
         handle_env_disconnect({"slug": "errbox"}, task_id="test")
 ```
 
-**QA:** `scripts/run_tests.sh tests/plugins/test_multitool.py -v` — 3 tests, Check 2 skipped if no Docker.
+**QA:** `scripts/run_tests.sh tests/plugins/test_multienv.py -v` — 3 tests, Check 2 skipped if no Docker.
 
 ---
 
@@ -609,7 +609,7 @@ Wave 3 (parallel, after Wave 2):
   T9: __init__.py — register() + hooks          [deps: T1, T4, T5, T8]
 
 Wave 4 (after Wave 3):
-  T10: test_multitool.py — 3 checks             [deps: T9]
+  T10: test_multienv.py — 3 checks             [deps: T9]
 ```
 
 ---
@@ -618,9 +618,9 @@ Wave 4 (after Wave 3):
 
 | Gate | After | Verify |
 |---|---|---|
-| Gate 1 | Wave 1 | `python -c "from plugins.multitool.schemas import ENV_CONNECT_SCHEMA; print('ok')"` + `python -c "from plugins.multitool.registry import EnvironmentRegistry; print('ok')"` |
-| Gate 2 | Wave 2 | `python -c "from plugins.multitool.handlers import handle_env_connect; print('ok')"` + `python -c "from plugins.multitool.dispatch import DISPATCH_TABLE; print(len(DISPATCH_TABLE))"` → 6 |
-| Gate 3 | Wave 3 | `python -c "from plugins.multitool import register; print(callable(register))"` → True |
+| Gate 1 | Wave 1 | `python -c "from plugins.multienv.schemas import ENV_CONNECT_SCHEMA; print('ok')"` + `python -c "from plugins.multienv.registry import EnvironmentRegistry; print('ok')"` |
+| Gate 2 | Wave 2 | `python -c "from plugins.multienv.handlers import handle_env_connect; print('ok')"` + `python -c "from plugins.multienv.dispatch import DISPATCH_TABLE; print(len(DISPATCH_TABLE))"` → 6 |
+| Gate 3 | Wave 3 | `python -c "from plugins.multienv import register; print(callable(register))"` → True |
 
 ---
 
@@ -630,7 +630,7 @@ Wave 4 (after Wave 3):
 |---|---|
 | DockerEnvironment constructor has many required params | Use `_create_environment("docker", image, cwd, timeout, ...)` from terminal_tool instead of direct constructor — handles defaults |
 | ShellFileOperations result types have complex fields | Use `dataclasses.asdict()` or manual field extraction in dispatch |
-| Plugin import path — `plugins.multitool.xxx` | Verify Hermes plugin discovery adds plugin dir to sys.path. Check how google_meet imports its modules. |
+| Plugin import path — `plugins.multienv.xxx` | Verify Hermes plugin discovery adds plugin dir to sys.path. Check how google_meet imports its modules. |
 | Thread safety of EnvironmentRegistry | Lock around all dict operations. Subagents may run concurrent tool calls. |
 | SSHEnvironment constructor blocks (connects + syncs) | Wrap in try/except, return error JSON on timeout |
 | env.execute() may raise on disconnected env | Catch in dispatch, return error JSON |
@@ -650,7 +650,7 @@ Verify the real user path: plugin discovery → connect → operate → disconne
 - Docker (for Check 2 — skip if unavailable)
 
 ### Test Cases
-1. **Plugin discovery**: Hermes finds multitool, register(ctx) called, 4 tools registered under "multitool" toolset
+1. **Plugin discovery**: Hermes finds multienv, register(ctx) called, 4 tools registered under "multienv" toolset
 2. **Docker E2E**: connect(docker, alpine) → terminal(echo > file) → read_file → write_file → verify → disconnect → list empty
 3. **Error paths**: invalid slug → error, SSH missing host → error, unknown tool_name → error
 
@@ -663,5 +663,5 @@ Verify the real user path: plugin discovery → connect → operate → disconne
 ### How to Execute
 ```bash
 cd hermes-agent
-scripts/run_tests.sh tests/plugins/test_multitool.py -v
+scripts/run_tests.sh tests/plugins/test_multienv.py -v
 ```

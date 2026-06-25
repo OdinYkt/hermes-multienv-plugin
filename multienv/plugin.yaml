@@ -1,4 +1,4 @@
-name: multitool
+name: multienv
 version: 0.1.0
 description: "Multi-environment tool plugin — work with multiple SSH and Docker environments simultaneously"
 author: NousResearch

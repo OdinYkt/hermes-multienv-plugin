@@ -1,6 +1,6 @@
 # BDD — Multi-Environment Tool Plugin
 
-Поведенческая спецификация плагина `multitool` для Hermes Agent.
+Поведенческая спецификация плагина `multienv` для Hermes Agent.
 Не жёсткий Given-When-Then, а кейсы, ожидания, edge cases и критерии приёмки.
 
 ---
@@ -451,7 +451,7 @@
 - [ ] Core `terminal` работает независимо от plugin
 - [ ] Core `execute_code` работает независимо от plugin
 - [ ] Core `_active_environments` не мутируется plugin-ом
-- [ ] Plugin toolset `multitool` включается/отключается через `hermes tools` без влияния на core tools
+- [ ] Plugin toolset `multienv` включается/отключается через `hermes tools` без влияния на core tools
 - [ ] Prompt caching не нарушается — plugin tools регистрируются at startup, не mid-conversation
 
 ---
@@ -540,7 +540,7 @@
 **Preconfigured envs из config**
 - `config.yaml` содержит:
   ```yaml
-  multitool:
+  multienv:
     environments:
       serverA:
         type: ssh
@@ -565,7 +565,7 @@
 - [ ] Preconfigured envs видны в env_list до connect
 - [ ] Auto-connect при первом env_tool обращении к preconfigured env
 - [ ] env_connect может override preconfigured env
-- [ ] Inventory читается из `multitool.environments` в config.yaml
+- [ ] Inventory читается из `multienv.environments` в config.yaml
 
 ---
 
@@ -588,7 +588,7 @@
 - [ ] Ровно 3 (или 4 с env_disconnect) tools в schema
 - [ ] Schema не растёт с числом envs
 - [ ] Schema не меняется mid-conversation
-- [ ] Plugin toolset `multitool` появляется в `hermes tools` UI
+- [ ] Plugin toolset `multienv` появляется в `hermes tools` UI
 
 ---
 
@@ -665,13 +665,13 @@
 ### 13.1. Plugin registration
 
 **Plugin discovered и loaded**
-- `~/.hermes/plugins/multitool/plugin.yaml` существует
-- `~/.hermes/plugins/multitool/__init__.py` содержит `register(ctx)`
+- `~/.hermes/plugins/multienv/plugin.yaml` существует
+- `~/.hermes/plugins/multienv/__init__.py` содержит `register(ctx)`
 - Plugin discovery находит plugin при старте Hermes
-- 3 (или 4) tools зарегистрированы в registry под toolset `multitool`
+- 3 (или 4) tools зарегистрированы в registry под toolset `multienv`
 
 **Plugin в `hermes tools` UI**
-- `hermes tools` показывает toolset `multitool`
+- `hermes tools` показывает toolset `multienv`
 - Toggle включения/выключения работает
 - Когда disabled — tools не появляются в schema
 
@@ -684,7 +684,7 @@
 ### 13.3. Критерии приёмки (интеграция)
 
 - [ ] Plugin обнаруживается Hermes plugin discovery
-- [ ] Tools появляются под toolset `multitool`
+- [ ] Tools появляются под toolset `multienv`
 - [ ] `hermes tools` UI показывает toolset
 - [ ] on_session_end hook cleanup-ит envs
 - [ ] Plugin не модифицирует core файлы
