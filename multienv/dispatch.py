@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from multienv.utils import format_error, format_success, postprocess_output
+from .utils import format_error, format_success, postprocess_output
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ def dispatch_search_files(env, file_ops, args: Dict[str, Any], task_id: Optional
 
 
 def dispatch_execute_code(env, file_ops, args: Dict[str, Any], task_id: Optional[str]) -> str:
-    from multienv.execute_code import execute_with_rpc
+    from .execute_code import execute_with_rpc
 
     code = args.get("code", "")
     return execute_with_rpc(env, file_ops, code, task_id=task_id)

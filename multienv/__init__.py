@@ -3,14 +3,14 @@
 Registers 4 tools: env_connect, env_list, env_tool, env_disconnect.
 """
 
-from multienv.schemas import (
+from .schemas import (
     ENV_CONNECT_SCHEMA,
     ENV_DISCONNECT_SCHEMA,
     ENV_LIST_SCHEMA,
     ENV_TOOL_SCHEMA,
 )
-from multienv.registry import registry as _registry
-from multienv.handlers import (
+from .registry import registry as _registry
+from .handlers import (
     handle_env_connect,
     handle_env_disconnect,
     handle_env_list,
