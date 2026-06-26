@@ -8,5 +8,6 @@ provides_tools:
   - env_list
   - env_tool
   - env_disconnect
+  - env_file_transfer
 hooks:
   - on_session_end
