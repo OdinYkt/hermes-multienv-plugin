@@ -10,6 +10,7 @@ Lets the agent work with multiple SSH and Docker environments simultaneously —
 - **env_list** — List all active environment connections
 - **env_tool** — Execute tool operations (terminal, read_file, write_file, patch, search_files, execute_code) on any connected environment
 - **env_disconnect** — Close connection and release resources
+- **env_file_transfer** — Transfer single files between host and environment (scp/docker exec, secret-safe)
 
 ### Supported environments
 
@@ -51,7 +52,7 @@ git clone https://github.com/OdinYkt/hermes-multienv-plugin.git ~/.hermes/plugin
 
 ## Usage
 
-The plugin registers 4 tools under the `multienv` toolset. Enable via `hermes tools` or `config.yaml`:
+The plugin registers 5 tools under the `multienv` toolset. Enable via `hermes tools` or `config.yaml`:
 
 ```yaml
 tools:
@@ -87,12 +88,23 @@ env_connect(slug="myapp", type="docker", container="running-app-container")
 env_disconnect(slug="serverA")
 ```
 
+**Transfer a file to an environment (secret-safe):**
+```
+env_file_transfer(env_slug="serverA", local_path="~/.env", remote_path="/app/.env", direction="upload")
+```
+
+**Download a file from an environment:**
+```
+env_file_transfer(env_slug="serverA", local_path="/tmp/hosts", remote_path="/etc/hosts", direction="download")
+```
+
 ## Architecture
 
 - **Plugin-only** — no core Hermes files modified
 - **EnvironmentRegistry** — thread-safe registry of named environment instances
 - **env_tool** — meta-dispatcher: routes `(env_slug, tool_name, args)` to the target environment
 - **execute_code Path C** — file-based RPC: script calls `hermes_tools.terminal()` → writes request file on remote → plugin poll loop reads, dispatches to `env.execute()`, writes response file → script continues
+- **env_file_transfer** — scp (SSH) or docker exec with stdin/stdout pipe (Docker). File content travels through OS subprocess pipes — never materializes as a Python string, so it cannot leak into `env.execute()` calls or logger output. Safe for secrets.
 - **Core isolation** — plugin never touches `_active_environments`, uses its own registry
 
 ## Requirements

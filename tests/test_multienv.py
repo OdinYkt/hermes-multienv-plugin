@@ -42,11 +42,12 @@ def _isolate_hermes_home(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_plugin_discovered_and_registered():
-    """Hermes finds multienv plugin, register(ctx) called, 4 tools in registry."""
+    """Hermes finds multienv plugin, register(ctx) called, 5 tools in registry."""
     from multienv import register
     from multienv.schemas import (
         ENV_CONNECT_SCHEMA,
         ENV_DISCONNECT_SCHEMA,
+        ENV_FILE_TRANSFER_SCHEMA,
         ENV_LIST_SCHEMA,
         ENV_TOOL_SCHEMA,
     )
@@ -68,10 +69,10 @@ def test_plugin_discovered_and_registered():
     ctx = FakeCtx()
     register(ctx)
 
-    # 4 tools registered
-    assert len(ctx.registered_tools) == 4
+    # 5 tools registered
+    assert len(ctx.registered_tools) == 5
     tool_names = {t["name"] for t in ctx.registered_tools}
-    assert tool_names == {"env_connect", "env_list", "env_tool", "env_disconnect"}
+    assert tool_names == {"env_connect", "env_list", "env_tool", "env_disconnect", "env_file_transfer"}
 
     # All under "multienv" toolset
     for t in ctx.registered_tools:
@@ -81,7 +82,7 @@ def test_plugin_discovered_and_registered():
     assert any(name == "on_session_end" for name, _ in ctx.hooks)
 
     # Schemas are valid dicts with required keys
-    for schema in [ENV_CONNECT_SCHEMA, ENV_LIST_SCHEMA, ENV_TOOL_SCHEMA, ENV_DISCONNECT_SCHEMA]:
+    for schema in [ENV_CONNECT_SCHEMA, ENV_LIST_SCHEMA, ENV_TOOL_SCHEMA, ENV_DISCONNECT_SCHEMA, ENV_FILE_TRANSFER_SCHEMA]:
         assert "name" in schema
         assert "description" in schema
         assert "parameters" in schema

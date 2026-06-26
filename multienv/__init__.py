@@ -1,11 +1,12 @@
 """Multi-environment tool plugin for Hermes Agent.
 
-Registers 4 tools: env_connect, env_list, env_tool, env_disconnect.
+Registers 5 tools: env_connect, env_list, env_tool, env_disconnect, env_file_transfer.
 """
 
 from .schemas import (
     ENV_CONNECT_SCHEMA,
     ENV_DISCONNECT_SCHEMA,
+    ENV_FILE_TRANSFER_SCHEMA,
     ENV_LIST_SCHEMA,
     ENV_TOOL_SCHEMA,
 )
@@ -16,6 +17,7 @@ from .handlers import (
     handle_env_list,
     handle_env_tool,
 )
+from .transfer import handle_env_file_transfer
 
 import logging
 
@@ -26,6 +28,7 @@ _TOOLS = [
     ("env_list", ENV_LIST_SCHEMA, handle_env_list, "📋"),
     ("env_tool", ENV_TOOL_SCHEMA, handle_env_tool, "🔧"),
     ("env_disconnect", ENV_DISCONNECT_SCHEMA, handle_env_disconnect, "🔌"),
+    ("env_file_transfer", ENV_FILE_TRANSFER_SCHEMA, handle_env_file_transfer, "📤"),
 ]
 
 
