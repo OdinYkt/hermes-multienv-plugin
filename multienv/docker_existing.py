@@ -74,8 +74,21 @@ class ExistingDockerEnvironment(BaseEnvironment):
                 f"(state: {running}). Start it first with 'docker start {self._container}'."
             )
 
+        # Detect available shell — bash preferred, fallback to sh
+        # Alpine/distroless containers only have sh/ash
+        try:
+            shell_check = subprocess.run(
+                [self._docker_exe, "exec", self._container,
+                 "sh", "-c", "command -v bash >/dev/null 2>&1 && echo bash || echo sh"],
+                capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL,
+            )
+            self._shell = shell_check.stdout.strip() or "sh"
+        except Exception:
+            self._shell = "sh"
+
         logger.info(
-            "ExistingDockerEnvironment: attached to '%s'", self._container
+            "ExistingDockerEnvironment: attached to '%s' (shell=%s)",
+            self._container, self._shell,
         )
 
     def _run_bash(
@@ -94,11 +107,55 @@ class ExistingDockerEnvironment(BaseEnvironment):
         cmd.append(self._container)
 
         if login:
-            cmd.extend(["bash", "-l", "-c", cmd_string])
+            cmd.extend([self._shell, "-l", "-c", cmd_string])
         else:
-            cmd.extend(["bash", "-c", cmd_string])
+            cmd.extend([self._shell, "-c", cmd_string])
 
         return _popen_bash(cmd, stdin_data)
+
+    def init_session(self):
+        """Capture login shell environment — skip snapshot for non-bash shells.
+
+        BaseEnvironment.init_session() uses bash-isms (declare -f, alias -p,
+        shopt -s expand_aliases) that don't work in sh/ash. For non-bash
+        containers, skip the snapshot — _wrap_command will use login shell
+        for each command instead of sourcing a snapshot file.
+        """
+        if self._shell == "bash":
+            super().init_session()
+        else:
+            self._snapshot_ready = False
+            logger.info(
+                "ExistingDockerEnvironment: skipping session snapshot "
+                "for '%s' (shell=%s, not bash)",
+                self._container, self._shell,
+            )
+
+    def _wrap_command(self, command: str, cwd: str) -> str:
+        """Build shell script for command execution.
+
+        For non-bash shells (sh/ash), overrides BaseEnvironment._wrap_command
+        to avoid bash-isms: 'builtin cd', 'source', 'declare', 'shopt'.
+        Uses plain POSIX sh syntax instead.
+        """
+        if self._shell == "bash":
+            return super()._wrap_command(command, cwd)
+
+        # POSIX sh fallback — no snapshot, plain cd, CWD marker
+        import shlex as _shlex
+        escaped = command.replace("'", "'\\''")
+        _quoted_cwd_file = _shlex.quote(self._cwd_file)
+
+        quoted_cwd = self._quote_cwd_for_cd(cwd)
+        parts = [
+            f"cd -- {quoted_cwd} || exit 126",
+            f"eval '{escaped}'",
+            f"__hermes_ec=$?",
+            f"pwd -P > {_quoted_cwd_file} 2>/dev/null || true",
+            f"printf '\\n{self._cwd_marker}%s{self._cwd_marker}\\n' \"$(pwd -P)\"",
+            f"exit $__hermes_ec",
+        ]
+        return "\n".join(parts)
 
     def cleanup(self) -> None:
         """No-op — we don't own the container's lifecycle."""
