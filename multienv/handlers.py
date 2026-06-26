@@ -173,6 +173,7 @@ def handle_env_tool(args: Dict[str, Any], **kwargs: Any) -> str:
             f"Unknown tool_name: '{tool_name}'. Supported: {supported}"
         )
 
+    registry.begin_call()
     try:
         return dispatch_fn(env, file_ops, tool_args, task_id)
     except Exception as exc:
@@ -180,6 +181,8 @@ def handle_env_tool(args: Dict[str, Any], **kwargs: Any) -> str:
         return format_error(
             f"Tool execution failed: {type(exc).__name__}: {exc}"
         )
+    finally:
+        registry.end_call()
 
 
 # ---------------------------------------------------------------------------

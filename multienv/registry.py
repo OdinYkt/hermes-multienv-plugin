@@ -28,6 +28,8 @@ class EnvironmentRegistry:
         self._meta: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._counter = 0
+        self._active_calls = 0
+        self._cleanup_pending = False
 
     # ------------------------------------------------------------------
     # Connection management
@@ -110,8 +112,23 @@ class EnvironmentRegistry:
             return f"env-{self._counter}"
 
     def cleanup_all(self) -> None:
-        """Call cleanup() on every registered environment. Used by on_session_end."""
+        """Call cleanup() on every registered environment. Used by on_session_end.
+
+        If tool calls are in progress (_active_calls > 0), defers cleanup
+        until the last call ends (end_call triggers _try_deferred_cleanup).
+        This prevents registry wipe during parallel tool execution.
+        """
+        import traceback
+
         with self._lock:
+            if self._active_calls > 0:
+                self._cleanup_pending = True
+                logger.warning(
+                    "EnvironmentRegistry: cleanup_all deferred — %d active tool calls in progress",
+                    self._active_calls,
+                )
+                logger.debug("cleanup_all caller stack:\n%s", "".join(traceback.format_stack()))
+                return
             slugs = list(self._envs.keys())
 
         for slug in slugs:
@@ -127,6 +144,31 @@ class EnvironmentRegistry:
             self._envs.clear()
             self._file_ops.clear()
             self._meta.clear()
+            self._cleanup_pending = False
+
+    # ------------------------------------------------------------------
+    # Active-call tracking — prevents cleanup_all from wiping registry
+    # while tool calls are in progress (issue #3)
+    # ------------------------------------------------------------------
+
+    def begin_call(self) -> None:
+        """Mark the start of a tool call. Prevents cleanup_all from clearing the registry."""
+        with self._lock:
+            self._active_calls += 1
+
+    def end_call(self) -> None:
+        """Mark the end of a tool call. Triggers deferred cleanup if pending."""
+        with self._lock:
+            self._active_calls -= 1
+            if self._active_calls <= 0:
+                self._active_calls = 0
+                should_cleanup = self._cleanup_pending
+            else:
+                should_cleanup = False
+
+        if should_cleanup:
+            logger.info("EnvironmentRegistry: executing deferred cleanup_all after last active call")
+            self.cleanup_all()
 
     # ------------------------------------------------------------------
     # Context-manager support (useful for tests)
@@ -139,6 +181,8 @@ class EnvironmentRegistry:
             self._file_ops.clear()
             self._meta.clear()
             self._counter = 0
+            self._active_calls = 0
+            self._cleanup_pending = False
 
 
 # Module-level singleton shared by all tool handlers.

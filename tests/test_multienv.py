@@ -363,3 +363,64 @@ print('FILE_CONTENT:', r)
 
     finally:
         handle_env_disconnect({"slug": "rpctest"}, task_id="test")
+
+
+# ---------------------------------------------------------------------------
+# Check 6 — on_session_end must not wipe registry during active tool calls
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not shutil.which("docker"), reason="Docker not available")
+def test_on_session_end_does_not_wipe_active_envs():
+    """on_session_end fires cleanup_all — but if tool calls are in progress,
+    registry must NOT be cleared. Envs must survive.
+"""
+    from multienv.handlers import handle_env_connect, handle_env_tool, handle_env_disconnect, handle_env_list
+    from multienv import _on_session_end
+    from multienv.registry import registry
+
+    # 1. Connect 2 Docker envs
+    for slug in ["survivor1", "survivor2"]:
+        result = json.loads(handle_env_connect({
+            "slug": slug, "type": "docker", "image": "python:3.12-slim", "cwd": "/root",
+        }, task_id="test"))
+        assert result.get("status") == "ok", f"connect {slug} failed: {result}"
+
+    try:
+        # 2. Simulate active tool call in progress (begin_call)
+        registry.begin_call()
+
+        # 3. Fire on_session_end (as Hermes might do mid-turn)
+        _on_session_end()
+
+        # 4. Registry should still have both envs — cleanup was deferred
+        result = json.loads(handle_env_list({}, task_id="test"))
+        env_count = len(result["environments"])
+        assert env_count == 2, (
+            f"Registry wiped during active call! Expected 2 envs, got {env_count}"
+        )
+
+        # 5. Tool call should still work on surviving env
+        result = json.loads(handle_env_tool({
+            "env_slug": "survivor1", "tool_name": "terminal",
+            "args": {"command": "echo STILL_ALIVE"},
+        }, task_id="test"))
+        assert result.get("exit_code") == 0, f"terminal after deferred cleanup: {result}"
+        assert "STILL_ALIVE" in result.get("output", "")
+
+        # 6. End the active call, THEN fire on_session_end — cleanup should proceed
+        registry.end_call()
+        _on_session_end()
+
+        # 7. Now registry should be empty
+        result = json.loads(handle_env_list({}, task_id="test"))
+        env_count = len(result["environments"])
+        assert env_count == 0, (
+            f"Registry not cleaned after end_call. Expected 0, got {env_count}"
+        )
+
+    finally:
+        # Manual cleanup in case test fails mid-way
+        for slug in ["survivor1", "survivor2"]:
+            try: handle_env_disconnect({"slug": slug}, task_id="test")
+            except: pass
+        registry.clear()
