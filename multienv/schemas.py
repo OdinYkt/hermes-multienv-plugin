@@ -196,3 +196,47 @@ ENV_DISCONNECT_SCHEMA: Dict[str, Any] = {
         "additionalProperties": False,
     },
 }
+
+# ---------------------------------------------------------------------------
+# env_file_transfer — transfer a single file between host and environment
+# ---------------------------------------------------------------------------
+
+ENV_FILE_TRANSFER_SCHEMA: Dict[str, Any] = {
+    "name": "env_file_transfer",
+    "description": (
+        "Transfer a single file between the host and a connected environment. "
+        "Uses scp (SSH) or docker cp (Docker) — file content never passes "
+        "through env.execute() or logs, making it safe for secrets."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "env_slug": {
+                "type": "string",
+                "description": (
+                    "Identifier of the target environment (from env_connect "
+                    "or shown by env_list)."
+                ),
+            },
+            "local_path": {
+                "type": "string",
+                "description": "Path to the file on the host machine.",
+            },
+            "remote_path": {
+                "type": "string",
+                "description": "Destination path inside the environment.",
+            },
+            "direction": {
+                "type": "string",
+                "enum": ["upload", "download"],
+                "default": "upload",
+                "description": (
+                    "upload = host to env, download = env to host. "
+                    "Default: upload."
+                ),
+            },
+        },
+        "required": ["env_slug", "local_path", "remote_path"],
+        "additionalProperties": False,
+    },
+}
